@@ -4,6 +4,7 @@ import multer from "multer";
 import fs from "fs"
 import { Product } from "../models/product.js";
 import { Edge } from "../models/edge.js";
+import path from 'path';
 
 const router = express.Router()
 var imagesArr = [];
@@ -61,6 +62,68 @@ router.get('/', async (req, res) => {
 
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/create-with-images', upload.array("images"), async (req, res) => {
+    try {
+        const { productId, edgeId } = req.body;
+        const files = req.files;
+
+        // Check if the product exists
+        const productExists = await Product.findById(productId);
+        if (!productExists) {
+            return res.status(404).json({ error: true, msg: "Product not found" });
+        }
+
+        const edgeExists = await Edge.findById(edgeId);
+        if (!edgeExists) {
+            return res.status(404).json({ error: true, msg: "Edge not found" });
+        }
+
+        let productEdge = await Productedges.findOne({ productId });
+        if (productEdge) {
+            const edgeExists = productEdge.edges.some(edge => edge.name.toString() === edgeId);
+            if (edgeExists) {
+                // If duplicate found, remove any uploaded files
+                if (files && files.length > 0) {
+                    files.forEach(file => {
+                        try {
+                            fs.unlinkSync(path.join('uploads', file.filename));
+                        } catch (err) {
+                            console.error('Error deleting uploaded file:', err);
+                        }
+                    });
+                }
+                return res.status(409).json({ error: true, msg: "This edge already exists for the product" });
+            }
+        }
+
+        // Get image filenames
+        const imagePaths = files.map(file => file.filename);
+        const newEdge = {
+            name: edgeId,
+            images: imagePaths,
+        };
+
+        if (productEdge) {
+            productEdge.edges.push(newEdge);
+            await productEdge.save();
+        } else {
+            // Create new entry
+            productEdge = new Productedges({
+                productId,
+                edges: [newEdge],
+            });
+            await productEdge.save();
+        }
+
+        return res.status(201).json({ 
+            message: "Edge added successfully with images", 
+            productEdge 
+        });
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
     }
 });
 
